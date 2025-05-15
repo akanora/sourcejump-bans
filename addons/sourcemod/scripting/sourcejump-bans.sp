@@ -20,6 +20,10 @@ ConVar gCV_Actions;
 
 ArrayList gA_SteamIds;
 bool gB_TimerBanned[MAXPLAYERS + 1];
+int gI_LastRestart[MAXPLAYERS + 1];
+int gI_LastWarningTick[MAXPLAYERS + 1];
+
+chatstrings_t gS_ChatStrings;
 
 public Plugin myinfo =
 {
@@ -53,6 +57,21 @@ public void OnConfigsExecuted()
 	HTTPRequest request = new HTTPRequest(URL);
 	request.SetHeader("api-key", apiKey);
 	request.Get(OnBannedPlayersReceived);
+}
+
+public void Shavit_OnChatConfigLoaded()
+{
+    Shavit_GetChatStringsStruct(gS_ChatStrings);
+}
+
+public void Shavit_OnRestart(int client, int track)
+{
+	gI_LastRestart[client] = GetGameTickCount();
+}
+
+public Action Shavit_OnTeleportPre(int client, int index, int target)
+{
+	gI_LastRestart[client] = GetGameTickCount();
 }
 
 public void OnClientPostAdminCheck(int client)
@@ -127,13 +146,46 @@ void OnBannedPlayersReceived(HTTPResponse response, any value)
  */
 public Action Shavit_OnFinishPre(int client, timer_snapshot_t snapshot)
 {
-	if (gB_TimerBanned[client])
+	if (gB_TimerBanned[client] && Shavit_GetBhopStyle(client) == 0) // If you delete Shavit_GetBhopStyle(client) == 0 from here the player will be banned from all styles.
 	{
-		PrintToChat(client, "[SourceJump] Your time did not save because your account is SourceJump banned.");
-		return Plugin_Stop;
+		Shavit_SetPracticeMode(client, true, true);
+		Shavit_PrintToChat(client, "Your time did not save because your account is SourceJump %sbanned%s.", gS_ChatStrings.sWarning, gS_ChatStrings.sText);
+	}
+	
+	return Plugin_Continue;
+}
+
+public void Shavit_OnLeaveZone(int client, int type, int track, int id, int entity, int data)
+{
+	if (!IsValidClient(client, true) || IsFakeClient(client))
+	{
+		return;
 	}
 
-	return Plugin_Continue;
+	if (type != Zone_Start)
+	{
+		return;
+	}
+
+	if (Shavit_GetTimerStatus(client) != Timer_Running)
+	{
+		return;
+	}
+
+	if (Shavit_InsideZone(client, Zone_Start, track))
+	{
+		return;
+	}
+
+	if (gB_TimerBanned[client] && Shavit_GetBhopStyle(client) == 0)
+	{
+		int tick = GetGameTickCount();
+		if (GetGameTickCount() - gI_LastWarningTick[client] >= 100)
+		{
+			Shavit_PrintToChat(client, "Your time will not save because your account is SourceJump %sbanned%s.", gS_ChatStrings.sWarning, gS_ChatStrings.sText);
+			gI_LastWarningTick[client] = tick;
+		}
+	}
 }
 
 /**
